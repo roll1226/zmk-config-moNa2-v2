@@ -24,14 +24,68 @@
     combos {
         compatible = "zmk,combos";
 
-        layer4_ESC {
-            bindings = <&lt 4 ESC>;
-            key-positions = <39 38>;
+        singleQu {
+            bindings = <&kp SINGLE_QUOTE>;
+            key-positions = <19 20>;
+            timeout-ms = <800>;
+            layers = <0>;
+        };
+
+        backquat {
+            bindings = <&kp GRAVE>;
+            key-positions = <19 20>;
+            timeout-ms = <800>;
+            layers = <2>;
+        };
+
+        tidle {
+            bindings = <&kp TILDE>;
+            key-positions = <31 32>;
+            timeout-ms = <800>;
+            layers = <2>;
+        };
+
+        windowmax {
+            bindings = <&kp LC(LG(UP_ARROW))>;
+            key-positions = <31 32>;
+            timeout-ms = <800>;
+            layers = <3>;
+        };
+
+        backdel {
+            bindings = <&kp BACKSPACE>;
+            key-positions = <8 9>;
+            timeout-ms = <800>;
+            layers = <0 1 3>;
+        };
+
+        del {
+            bindings = <&kp DELETE>;
+            key-positions = <8 9>;
+            timeout-ms = <800>;
+            layers = <2>;
         };
 
         tab {
             bindings = <&kp TAB>;
-            key-positions = <11 12>;
+            key-positions = <0 1>;
+            timeout-ms = <800>;
+            layers = <0 3 2>;
+        };
+
+        esc {
+            bindings = <&kp ESCAPE>;
+            key-positions = <0 1>;
+            timeout-ms = <800>;
+            layers = <1>;
+        };
+
+        a+l+left {
+            bindings = <&kp LA(LG(LEFT_ARROW))>;
+            key-positions = <19 20>;
+            timeout-ms = <500>;
+            require-prior-idle-ms = <500>;
+            layers = <1>;
         };
     };
 
