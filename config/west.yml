@@ -25,7 +25,7 @@ manifest:
       revision: main
     - name: zmk-rgbled-widget
       remote: caksoylar
-      revision: main
+      revision: 68db254  # last commit with ZMK v0.2 compatibility shim
     - name: zmk-input-processor-keybind
       remote: zettaface
       revision: main
