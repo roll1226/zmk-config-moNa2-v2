@@ -1,0 +1,28 @@
+"""Protocol constants shared by all test scripts."""
+
+SERVICE_UUID = "12ab0001-8b1f-4f9f-9f64-0fd8b7f56d01"
+STATUS_UUID  = "12ab0002-8b1f-4f9f-9f64-0fd8b7f56d01"
+PAYLOAD_UUID = "12ab0003-8b1f-4f9f-9f64-0fd8b7f56d01"
+COMMAND_UUID = "12ab0004-8b1f-4f9f-9f64-0fd8b7f56d01"
+
+PROTOCOL_VERSION       = 1
+FRAME_OPCODE_DRAFT     = 1
+CHUNK_SIZE             = 128
+
+COMMAND_NOOP           = 0
+COMMAND_COMMIT         = 1
+COMMAND_ROLLBACK       = 2
+COMMAND_CLEAR          = 3
+
+STATUS_READY           = 0x01
+STATUS_HAS_COMMITTED   = 0x02
+STATUS_HAS_STAGED      = 0x04
+STATUS_STAGED_DIRTY    = 0x08
+
+RESULT_OK              =  0
+RESULT_INVALID_FRAME   = -1
+RESULT_TOO_LARGE       = -2
+RESULT_STORAGE_ERROR   = -3
+RESULT_APPLY_ERROR     = -4
+
+DEVICE_NAME            = "mona2"

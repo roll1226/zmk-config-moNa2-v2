@@ -1,0 +1,44 @@
+menu "mona2 extensions"
+
+config MONA2_BLE_KEYMAP_SERVICE
+    bool "Enable mona2 BLE keymap service"
+    default n
+    help
+      Enables the mona2-specific firmware extension point used by the BLE
+      keymap editor.
+
+config MONA2_BLE_KEYMAP_SERVICE_LOG_LEVEL_INF
+    bool "Log BLE keymap service startup"
+    default y
+    depends on MONA2_BLE_KEYMAP_SERVICE
+
+config MONA2_BLE_KEYMAP_MAX_PAYLOAD_SIZE
+    int "Maximum persisted keymap payload size"
+    default 2048
+    range 256 8192
+    depends on MONA2_BLE_KEYMAP_SERVICE
+    help
+      Maximum byte size accepted for the mona2 keymap payload exchanged over
+      the custom BLE service and stored through Zephyr settings.
+
+config MONA2_BLE_KEYMAP_CHUNK_SIZE
+    int "Preferred BLE chunk size"
+    default 128
+    range 20 244
+    depends on MONA2_BLE_KEYMAP_SERVICE
+    help
+      The Web editor uses this size when framing BLE payload writes.
+
+config MONA2_BLE_KEYMAP_APPLY
+    bool "Apply received keymap payload via ZMK runtime API and reboot"
+    default y
+    depends on MONA2_BLE_KEYMAP_SERVICE
+    depends on ZMK_STUDIO
+    help
+      When enabled, mona2_ble_keymap_service_apply() parses the committed
+      JSON payload, calls zmk_keymap_set_layer_binding_at_idx() for every
+      changed binding, saves via zmk_keymap_save_changes(), and reboots.
+      Requires CONFIG_ZMK_STUDIO=y (provides the set/save API).  Disable
+      to keep only NVS persistence without the runtime apply step.
+
+endmenu

@@ -1,0 +1,4 @@
+zephyr_library_named(mona2_extensions)
+zephyr_library_sources_ifdef(CONFIG_MONA2_BLE_KEYMAP_SERVICE src/ble_keymap_storage.c)
+zephyr_library_sources_ifdef(CONFIG_MONA2_BLE_KEYMAP_SERVICE src/ble_keymap_service.c)
+zephyr_library_sources_ifdef(CONFIG_MONA2_BLE_KEYMAP_APPLY   src/ble_keymap_apply.c)
