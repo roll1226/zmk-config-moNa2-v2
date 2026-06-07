@@ -123,6 +123,10 @@ static void mona2_ble_keymap_refresh_status(void)
     }
 }
 
+/* Forward-declare the GATT service so mona2_ble_keymap_publish_status() can
+ * reference its attrs array before BT_GATT_SERVICE_DEFINE appears below. */
+extern const struct bt_gatt_service_static mona2_ble_keymap_service;
+
 static void mona2_ble_keymap_publish_status(void)
 {
     mona2_ble_keymap_refresh_status();
