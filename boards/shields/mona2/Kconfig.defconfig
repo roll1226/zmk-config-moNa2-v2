@@ -31,6 +31,18 @@ config NFCT_PINS_AS_GPIOS
 config ZMK_SPLIT
     default y
 
+config INPUT
+    default y
+
+config ZMK_POINTING
+    default y
+
+config SPI
+    default y
+
+config PAW3222
+    default y
+
 config RGBLED_WIDGET_BATTERY_LEVEL_HIGH
     default 30
 
