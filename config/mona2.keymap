@@ -141,10 +141,10 @@
 
         layer_1 {
             bindings = <
-&kp NUMBER_1  &kp NUMBER_2  &kp NUMBER_3  &kp NUMBER_4   &kp NUMBER_5                    &kp NUMBER_6    &kp NUMBER_7     &kp NUMBER_8  &kp NUMBER_9              &kp NUMBER_0
-&kp F1        &kp F2        &kp F3        &kp LA(LG(C))  &trans                  &trans  &kp LEFT_ARROW  &kp DOWN_ARROW   &kp UP_ARROW  &kp RIGHT_ARROW           &kp LA(LG(PERIOD))
-&kp F4        &kp F5        &kp F6        &trans         &trans        &trans    &trans  &trans          &kp LS(LA(TAB))  &kp LA(TAB)   &kp LS(LG(LEFT_BRACKET))  &kp LS(LG(RIGHT_BRACKET))
-&trans        &trans        &trans        &trans         &trans        &trans    &trans  &kp RA(SPACE)                                                            &trans
+&kp NUMBER_1  &kp NUMBER_2  &kp NUMBER_3  &kp NUMBER_4   &kp NUMBER_5                       &kp NUMBER_6    &kp NUMBER_7     &kp NUMBER_8  &kp NUMBER_9              &kp NUMBER_0
+&kp F1        &kp F2        &kp F3        &kp LA(LG(C))  &trans                     &trans  &kp LEFT_ARROW  &kp DOWN_ARROW   &kp UP_ARROW  &kp RIGHT_ARROW           &kp LA(LG(PERIOD))
+&kp F4        &kp F5        &kp F6        &kp C_VOL_DN   &kp C_VOLUME_UP  &trans    &trans  &trans          &kp LS(LA(TAB))  &kp LA(TAB)   &kp LS(LG(LEFT_BRACKET))  &kp LS(LG(RIGHT_BRACKET))
+&trans        &trans        &trans        &trans         &trans           &trans    &trans  &kp RA(SPACE)                                                            &trans
             >;
 
             sensor-bindings = <&scroll_right_left>;
