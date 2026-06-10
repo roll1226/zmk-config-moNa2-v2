@@ -15,7 +15,9 @@ import type { KeyBinding, KeymapLayer } from "./hooks/useKeymap";
 const SERIAL_AVAILABLE =
   typeof navigator !== "undefined" && "serial" in navigator;
 const BLUETOOTH_AVAILABLE =
-  typeof navigator !== "undefined" && "bluetooth" in navigator;
+  typeof navigator !== "undefined" &&
+  "bluetooth" in navigator &&
+  typeof (navigator as unknown as { bluetooth?: unknown }).bluetooth !== "undefined";
 
 export default function App() {
   const [conn, setConn] = useState<RpcConnection | null>(null);
