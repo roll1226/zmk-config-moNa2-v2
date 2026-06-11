@@ -25,11 +25,22 @@ const HID_LABELS: Record<number, string> = {
 
 export { HID_LABELS };
 
-// ZMK encodes HID params as (usage_page << 16) | usage_id
-// Extract the raw HID code (lower 16 bits) for lookup
+// ZMK encodes HID params as (modifier_flags << 24) | (page << 16) | usage_id
+// Bits 24-31: modifier flags (HID modifier byte order)
+// Bits 16-23: HID usage page
+// Bits 0-15:  HID usage ID
+const MOD_LABELS: [number, string][] = [
+  [0x01, "L⌃"], [0x02, "L⇧"], [0x04, "L⌥"], [0x08, "L⌘"],
+  [0x10, "R⌃"], [0x20, "R⇧"], [0x40, "R⌥"], [0x80, "R⌘"],
+];
+
 function hidLabel(zmkUsage: number): string {
   const code = zmkUsage & 0xFFFF;
-  return HID_LABELS[code] ?? `0x${code.toString(16)}`;
+  const modFlags = (zmkUsage >>> 24) & 0xFF;
+  const keyStr = HID_LABELS[code] ?? `0x${code.toString(16)}`;
+  if (modFlags === 0) return keyStr;
+  const modStr = MOD_LABELS.filter(([b]) => modFlags & b).map(([, l]) => l).join("+");
+  return `${modStr}+${keyStr}`;
 }
 
 export function getKeyLabel(

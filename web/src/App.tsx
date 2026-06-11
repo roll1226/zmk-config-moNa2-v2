@@ -10,7 +10,10 @@ import { ConnectButton } from "./components/ConnectButton";
 import { LayerTabs } from "./components/LayerTabs";
 import { KeyboardLayout } from "./components/KeyboardLayout";
 import { BindingEditor } from "./components/BindingEditor";
+import { KeyPickerPanel } from "./components/KeyPickerPanel";
 import type { KeyBinding, KeymapLayer } from "./hooks/useKeymap";
+
+const HID_PAGE_KEYBOARD = 7;
 
 const SERIAL_AVAILABLE =
   typeof navigator !== "undefined" && "serial" in navigator;
@@ -27,7 +30,7 @@ export default function App() {
   const [activeLayer, setActiveLayer] = useState(0);
   const [selectedKey, setSelectedKey] = useState<number | null>(null);
 
-  const { layers, loading, error, unsaved, updateBinding, save, discard } =
+  const { layers, loading, error, unsaved, updateBinding, swapBindings, save, discard } =
     useKeymap(conn);
   const { behaviors, loading: behaviorsLoading, error: behaviorsError } = useBehaviors(conn);
 
@@ -59,6 +62,26 @@ export default function App() {
       if (ok) setSelectedKey(null);
     },
     [selectedKey, activeLayer, layers, updateBinding]
+  );
+
+  const handleSwap = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const layerId = layers[activeLayer]?.id ?? activeLayer;
+      void swapBindings(layerId, fromIndex, toIndex);
+    },
+    [activeLayer, layers, swapBindings]
+  );
+
+  const handleAssignFromPicker = useCallback(
+    (keyIndex: number, rawCode: number, mods: number) => {
+      const kpEntry = [...behaviors.entries()].find(([, b]) => b.displayName === "Key Press");
+      if (!kpEntry) return;
+      const [kpId] = kpEntry;
+      const layerId = layers[activeLayer]?.id ?? activeLayer;
+      const param1 = ((mods & 0xFF) << 24) | (HID_PAGE_KEYBOARD << 16) | (rawCode & 0xFFFF);
+      void updateBinding(layerId, keyIndex, { behaviorId: kpId, param1, param2: 0 });
+    },
+    [behaviors, layers, activeLayer, updateBinding]
   );
 
   const currentLayer = layers[activeLayer];
@@ -205,12 +228,16 @@ export default function App() {
                     prev === i ? null : i
                   )
                 }
+                onSwap={handleSwap}
+                onAssignFromPicker={handleAssignFromPicker}
               />
             </div>
 
+            <KeyPickerPanel />
+
             {selectedKey === null && (
-              <p className="mt-4 text-sm text-gray-500">
-                キーをクリックしてバインディングを編集できます
+              <p className="mt-2 text-xs text-gray-500">
+                キーパレットからドラッグ、またはキーをクリックして詳細編集
               </p>
             )}
           </>

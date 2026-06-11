@@ -8,7 +8,13 @@ interface KeyCapProps {
   binding: KeyBinding | undefined;
   behaviors: Map<number, BehaviorDetails>;
   selected: boolean;
+  isDragOver: boolean;
   onClick: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
 }
 
 export function KeyCap({
@@ -16,15 +22,31 @@ export function KeyCap({
   binding,
   behaviors,
   selected,
+  isDragOver,
   onClick,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: KeyCapProps) {
   const behavior = binding ? behaviors.get(binding.behaviorId) : undefined;
   const label = binding ? getKeyLabel(binding, behaviors) : "";
   const behaviorName = behavior?.displayName ?? "";
 
+  let bgClass = "bg-gray-700 border-gray-500 text-gray-200 hover:bg-gray-600 hover:border-gray-400";
+  if (selected) bgClass = "bg-blue-600 border-blue-400 text-white";
+  else if (isDragOver) bgClass = "bg-green-700 border-green-400 text-white scale-105";
+
   return (
     <button
+      draggable
       onClick={onClick}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       style={{
         position: "absolute",
         left: keyPos.x * UNIT_PX,
@@ -32,20 +54,12 @@ export function KeyCap({
         width: KEY_SIZE_PX,
         height: KEY_SIZE_PX,
       }}
-      className={`rounded flex flex-col items-center justify-center text-xs leading-tight border transition-all ${
-        selected
-          ? "bg-blue-600 border-blue-400 text-white"
-          : "bg-gray-700 border-gray-500 text-gray-200 hover:bg-gray-600 hover:border-gray-400"
-      }`}
-      title={behaviorName}
+      className={`rounded flex flex-col items-center justify-center text-xs leading-tight border transition-all cursor-grab active:cursor-grabbing ${bgClass}`}
+      title={`${behaviorName}${isDragOver ? " (ここにドロップ)" : ""}`}
     >
-      <span className="font-medium truncate w-full text-center px-1">
-        {label}
-      </span>
+      <span className="font-medium truncate w-full text-center px-1">{label}</span>
       {behaviorName && behaviorName !== "Key Press" && (
-        <span className="text-[9px] opacity-60 truncate w-full text-center px-1">
-          {behaviorName}
-        </span>
+        <span className="text-[9px] opacity-60 truncate w-full text-center px-1">{behaviorName}</span>
       )}
     </button>
   );

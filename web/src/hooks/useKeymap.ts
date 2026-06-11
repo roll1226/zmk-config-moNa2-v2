@@ -121,5 +121,35 @@ export function useKeymap(conn: RpcConnection | null) {
     };
   }, [conn]);
 
-  return { layers, loading, error, unsaved, updateBinding, save, discard };
+  const swapBindings = useCallback(
+    async (layerId: number, fromIndex: number, toIndex: number): Promise<boolean> => {
+      if (!conn || fromIndex === toIndex) return false;
+      const layer = layers.find((l: KeymapLayer) => l.id === layerId);
+      if (!layer) return false;
+      const fromBinding = layer.bindings[fromIndex];
+      const toBinding = layer.bindings[toIndex];
+      if (!fromBinding || !toBinding) return false;
+      try {
+        await setLayerBinding(conn, layerId, toIndex, fromBinding);
+        await setLayerBinding(conn, layerId, fromIndex, toBinding);
+        setLayers((prev: KeymapLayer[]) =>
+          prev.map((l: KeymapLayer) => {
+            if (l.id !== layerId) return l;
+            const b = [...l.bindings];
+            b[toIndex] = fromBinding;
+            b[fromIndex] = toBinding;
+            return { ...l, bindings: b };
+          })
+        );
+        setUnsaved(true);
+        return true;
+      } catch (e) {
+        setError(`キーの入れ替えに失敗しました: ${String(e)}`);
+        return false;
+      }
+    },
+    [conn, layers]
+  );
+
+  return { layers, loading, error, unsaved, updateBinding, swapBindings, save, discard };
 }
