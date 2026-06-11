@@ -11,6 +11,7 @@ import { LayerTabs } from "./components/LayerTabs";
 import { KeyboardLayout } from "./components/KeyboardLayout";
 import { BindingEditor } from "./components/BindingEditor";
 import { KeyPickerPanel } from "./components/KeyPickerPanel";
+import { KeymapExportModal } from "./components/KeymapExportModal";
 import type { KeyBinding, KeymapLayer } from "./hooks/useKeymap";
 
 const HID_PAGE_KEYBOARD = 7;
@@ -29,6 +30,7 @@ export default function App() {
   const [connectedVia, setConnectedVia] = useState<"usb" | "bluetooth" | null>(null);
   const [activeLayer, setActiveLayer] = useState(0);
   const [selectedKey, setSelectedKey] = useState<number | null>(null);
+  const [showExport, setShowExport] = useState(false);
 
   const { layers, loading, error, unsaved, updateBinding, swapBindings, save, discard } =
     useKeymap(conn);
@@ -130,6 +132,15 @@ export default function App() {
                 />
                 {connectedLabel}
               </span>
+              {layers.length > 0 && (
+                <button
+                  onClick={() => setShowExport(true)}
+                  className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 border border-gray-500 text-sm font-semibold rounded transition-colors"
+                  title="現在のキーマップを .keymap ファイルとしてエクスポート"
+                >
+                  エクスポート
+                </button>
+              )}
               {unsaved && (
                 <>
                   <button
@@ -243,6 +254,14 @@ export default function App() {
           </>
         )}
       </main>
+
+      {showExport && (
+        <KeymapExportModal
+          layers={layers}
+          behaviors={behaviors}
+          onClose={() => setShowExport(false)}
+        />
+      )}
 
       {selectedKey !== null && conn && (
         <BindingEditor
