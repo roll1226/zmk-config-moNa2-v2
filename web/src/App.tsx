@@ -29,7 +29,7 @@ export default function App() {
 
   const { layers, loading, error, unsaved, updateBinding, save, discard } =
     useKeymap(conn);
-  const { behaviors } = useBehaviors(conn);
+  const { behaviors, loading: behaviorsLoading, error: behaviorsError } = useBehaviors(conn);
 
   const handleConnect = useCallback(
     async (method: "usb" | "bluetooth") => {
@@ -55,8 +55,8 @@ export default function App() {
     async (binding: KeyBinding) => {
       if (selectedKey === null) return;
       const layerId = layers[activeLayer]?.id ?? activeLayer;
-      await updateBinding(layerId, selectedKey, binding);
-      setSelectedKey(null);
+      const ok = await updateBinding(layerId, selectedKey, binding);
+      if (ok) setSelectedKey(null);
     },
     [selectedKey, activeLayer, layers, updateBinding]
   );
@@ -144,11 +144,11 @@ export default function App() {
             <p className="text-lg mb-2">接続方法を選択してください</p>
             <p className="text-sm mb-1">
               <span className="text-blue-400">USB で接続</span>
-              {" — "}mona2_r に USB ケーブルを繋いでから選択
+              {" — "}mona2_r に USB ケーブルを繋いでから選択（推奨）
             </p>
-            <p className="text-sm">
-              <span className="text-purple-400">Bluetooth で接続</span>
-              {" — "}PC と Bluetooth ペアリング済みの状態で選択
+            <p className="text-sm text-gray-500">
+              <span className="text-purple-400/70">Bluetooth で接続</span>
+              {" — "}macOS + Chrome では HID 接続済みデバイスへの GATT 接続が制限されるため動作しない場合があります
             </p>
             {connectError && (
               <p className="mt-4 text-red-400 text-sm">{connectError}</p>
@@ -156,15 +156,25 @@ export default function App() {
           </div>
         )}
 
-        {conn && loading && (
+        {conn && (loading || behaviorsLoading) && (
           <div className="text-center py-16 text-gray-400">
-            <p>キーマップを読み込み中...</p>
+            <p>{loading ? "キーマップを読み込み中..." : "ビヘイビアを読み込み中..."}</p>
           </div>
         )}
 
-        {conn && error && (
-          <div className="text-center py-8 text-red-400">
-            <p>{error}</p>
+        {conn && !loading && !behaviorsLoading && (error || behaviorsError) && (
+          <div className="text-center py-8 text-red-400 space-y-1">
+            {error && <p>{error}</p>}
+            {behaviorsError && <p>ビヘイビアエラー: {behaviorsError}</p>}
+          </div>
+        )}
+
+        {/* 診断パネル: 接続後にデータが正しく取れているか確認 */}
+        {conn && !loading && !behaviorsLoading && (
+          <div className="mb-3 px-3 py-2 bg-gray-800 border border-gray-600 rounded text-xs text-gray-400 font-mono">
+            layers: {layers.length} | bindings[0]: {layers[0]?.bindings?.length ?? "-"} | behaviors: {behaviors.size}
+            {layers.length === 0 && !error && " ← キーマップが空です"}
+            {behaviors.size === 0 && !behaviorsError && " ← ビヘイビア未取得"}
           </div>
         )}
 

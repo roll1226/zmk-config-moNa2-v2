@@ -17,17 +17,14 @@ const STUDIO_RPC_CHRC_UUID = "00000001-0196-6107-c967-c5cfb1c2482a";
 
 /**
  * Connect via Web Bluetooth.
- * Uses name-based filters so only ZMK/mona2 devices appear in the picker.
- * optionalServices is required to access the GATT characteristic after pairing.
+ * acceptAllDevices: ファームウェアリビルド前はデバイス名が未確定なため全デバイスを表示する。
+ * リビルド後は "mona2" という名前で一覧に表示される。
+ * optionalServices は GATT 接続後にサービスへのアクセスを許可するために必須。
  */
 export async function connectViaBluetooth(): Promise<RpcConnection> {
   const dev = await navigator.bluetooth
     .requestDevice({
-      filters: [
-        { name: "mona2" },          // after CONFIG_BT_DEVICE_NAME="mona2"
-        { namePrefix: "ZMK" },      // ZMK default: "ZMK Keyboard"
-        { services: [STUDIO_SERVICE_UUID] }, // if service UUID is advertised
-      ],
+      acceptAllDevices: true,
       optionalServices: [STUDIO_SERVICE_UUID],
     })
     .catch((e: unknown) => {
@@ -43,12 +40,23 @@ export async function connectViaBluetooth(): Promise<RpcConnection> {
   const label = dev.name ?? "Unknown";
 
   if (!dev.gatt.connected) {
-    await dev.gatt.connect();
+    await dev.gatt.connect().catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("NetworkError") || msg.includes("Unsupported")) {
+        throw new Error(
+          "Bluetooth GATT 接続に失敗しました。\n" +
+          "macOS の Chrome では、すでに HID として接続済みのキーボードへの Web Bluetooth 接続がブロックされます。\n" +
+          "USB ケーブルで接続して「USB で接続」をお使いください。"
+        );
+      }
+      throw e;
+    });
   }
 
   const svc = await dev.gatt.getPrimaryService(STUDIO_SERVICE_UUID).catch(() => {
     throw new Error(
-      "ZMK Studio GATT サービスが見つかりません。ファームウェアの BLE 設定を確認してください。"
+      "ZMK Studio GATT サービスが見つかりません。\n" +
+      "ファームウェアに CONFIG_ZMK_STUDIO=y が設定されているか確認してください。"
     );
   });
   const char = await svc.getCharacteristic(STUDIO_RPC_CHRC_UUID);

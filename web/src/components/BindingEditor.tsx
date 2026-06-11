@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import type { KeyBinding } from "../hooks/useKeymap";
 import type { BehaviorDetails } from "../hooks/useBehaviors";
-import { HID_LABELS } from "../utils/hidLabels";
+import type { BehaviorParameterValueDescription } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
+import { HID_LABELS } from "../utils/keyLabel";
 
 interface BindingEditorProps {
   keyIndex: number;
@@ -11,6 +12,42 @@ interface BindingEditorProps {
   onClose: () => void;
 }
 
+type ParamKind = "key" | "layer" | "none";
+
+// ZMK keyboard/keypad HID usage page
+const HID_PAGE_KEYBOARD = 7;
+
+function getParamKind(descs: BehaviorParameterValueDescription[]): ParamKind {
+  for (const d of descs) {
+    if (d.hidUsage !== undefined) return "key";
+    if (d.layerId !== undefined) return "layer";
+  }
+  return "none";
+}
+
+// ZMK encodes HID params as (usage_page << 16) | raw_code.
+// These helpers convert between raw HID codes and ZMK usage values.
+function encodeHid(rawCode: number): number {
+  return (HID_PAGE_KEYBOARD << 16) | rawCode;
+}
+function decodeHid(zmkUsage: number): number {
+  return zmkUsage & 0xFFFF;
+}
+
+// Build dropdown entries as full ZMK usage values so the <select> value
+// matches what is stored in bindings and what is sent to firmware.
+const hidEntries = Object.keys(HID_LABELS)
+  .map((k) => {
+    const rawCode = Number(k);
+    return {
+      zmkCode: encodeHid(rawCode),
+      label: HID_LABELS[rawCode as keyof typeof HID_LABELS] ?? String(rawCode),
+    };
+  })
+  .sort((a, b) => a.zmkCode - b.zmkCode);
+
+const DEFAULT_KEY_ZMK = encodeHid(4); // 'A' as default when resetting a key param
+
 export function BindingEditor({
   keyIndex,
   binding,
@@ -18,29 +55,38 @@ export function BindingEditor({
   onApply,
   onClose,
 }: BindingEditorProps) {
+  const initialBehavior = behaviors.get(binding?.behaviorId ?? 0);
+  const initialParamSet = initialBehavior?.metadata?.[0];
+  const initialP1Kind = getParamKind(initialParamSet?.param1 ?? []);
+  const initialP2Kind = getParamKind(initialParamSet?.param2 ?? []);
+
   const [behaviorId, setBehaviorId] = useState(binding?.behaviorId ?? 0);
-  const [param1, setParam1] = useState(binding?.param1 ?? 0);
-  const [param2, setParam2] = useState(binding?.param2 ?? 0);
+  // For key params, the binding stores full ZMK usage (page<<16|code).
+  // Keep them as-is — the hidEntries select uses zmkCode as values.
+  const [param1, setParam1] = useState(() =>
+    initialP1Kind === "key"
+      ? (binding?.param1 ?? DEFAULT_KEY_ZMK)
+      : (binding?.param1 ?? 0)
+  );
+  const [param2, setParam2] = useState(() =>
+    initialP2Kind === "key"
+      ? (binding?.param2 ?? DEFAULT_KEY_ZMK)
+      : (binding?.param2 ?? 0)
+  );
 
   const sortedBehaviors = [...behaviors.values()].sort((a, b) =>
     a.displayName.localeCompare(b.displayName)
   );
 
   const selectedBehavior = behaviors.get(behaviorId);
-  const isKp =
-    selectedBehavior?.displayName === "Key Press";
-  const isLayerBased =
-    selectedBehavior?.displayName === "Momentary Layer" ||
-    selectedBehavior?.displayName === "Toggle Layer" ||
-    selectedBehavior?.displayName === "Layer Tap";
-  const hasParam2 =
-    selectedBehavior?.displayName === "Layer Tap" ||
-    selectedBehavior?.displayName === "Mod Tap";
+  const paramSet = selectedBehavior?.metadata?.[0];
+  const p1Descs: BehaviorParameterValueDescription[] = paramSet?.param1 ?? [];
+  const p2Descs: BehaviorParameterValueDescription[] = paramSet?.param2 ?? [];
+  const param1Kind = getParamKind(p1Descs);
+  const param2Kind = getParamKind(p2Descs);
 
-  const hidEntries = Object.keys(HID_LABELS).map((k) => ({
-    code: Number(k),
-    label: HID_LABELS[Number(k) as keyof typeof HID_LABELS] ?? k,
-  }));
+  const param1Label = p1Descs[0]?.name || (param1Kind === "layer" ? "レイヤー番号" : "キー");
+  const param2Label = p2Descs[0]?.name || (param2Kind === "layer" ? "レイヤー番号" : "タップキー");
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -63,9 +109,14 @@ export function BindingEditor({
           <select
             value={behaviorId}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-              setBehaviorId(Number(e.target.value));
-              setParam1(0);
-              setParam2(0);
+              const newId = Number(e.target.value);
+              const newBehavior = behaviors.get(newId);
+              const newParamSet = newBehavior?.metadata?.[0];
+              const newP1Kind = getParamKind(newParamSet?.param1 ?? []);
+              const newP2Kind = getParamKind(newParamSet?.param2 ?? []);
+              setBehaviorId(newId);
+              setParam1(newP1Kind === "key" ? DEFAULT_KEY_ZMK : 0);
+              setParam2(newP2Kind === "key" ? DEFAULT_KEY_ZMK : 0);
             }}
             className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
           >
@@ -77,30 +128,28 @@ export function BindingEditor({
           </select>
         </div>
 
-        {/* Param 1: HID key or layer number */}
-        {(isKp || isLayerBased) && (
+        {/* Param 1 */}
+        {param1Kind !== "none" && (
           <div className="mb-4">
-            <label className="block text-gray-300 text-sm mb-1">
-              {isLayerBased ? "レイヤー番号" : "キー"}
-            </label>
-            {isLayerBased ? (
+            <label className="block text-gray-300 text-sm mb-1">{param1Label}</label>
+            {param1Kind === "layer" ? (
               <input
                 type="number"
                 min={0}
                 max={6}
                 value={param1}
-                onChange={(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setParam1(Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setParam1(Number(e.target.value))}
                 className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
               />
             ) : (
               <select
                 value={param1}
-                onChange={(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setParam1(Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setParam1(Number(e.target.value))}
                 className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
               >
-                {hidEntries.map(({ code, label }) => (
-                  <option key={code} value={code}>
-                    {label} (0x{code.toString(16).padStart(2, "0")})
+                {hidEntries.map(({ zmkCode, label }) => (
+                  <option key={zmkCode} value={zmkCode}>
+                    {label} (0x{decodeHid(zmkCode).toString(16).padStart(2, "0")})
                   </option>
                 ))}
               </select>
@@ -108,23 +157,32 @@ export function BindingEditor({
           </div>
         )}
 
-        {/* Param 2: HID key for layer-tap / mod-tap */}
-        {hasParam2 && (
+        {/* Param 2 */}
+        {param2Kind !== "none" && (
           <div className="mb-4">
-            <label className="block text-gray-300 text-sm mb-1">
-              タップキー
-            </label>
-            <select
-              value={param2}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setParam2(Number(e.target.value))}
-              className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
-            >
-              {hidEntries.map(({ code, label }) => (
-                <option key={code} value={code}>
-                  {label} (0x{code.toString(16).padStart(2, "0")})
-                </option>
-              ))}
-            </select>
+            <label className="block text-gray-300 text-sm mb-1">{param2Label}</label>
+            {param2Kind === "layer" ? (
+              <input
+                type="number"
+                min={0}
+                max={6}
+                value={param2}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setParam2(Number(e.target.value))}
+                className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
+              />
+            ) : (
+              <select
+                value={param2}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setParam2(Number(e.target.value))}
+                className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
+              >
+                {hidEntries.map(({ zmkCode, label }) => (
+                  <option key={zmkCode} value={zmkCode}>
+                    {label} (0x{decodeHid(zmkCode).toString(16).padStart(2, "0")})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         )}
 

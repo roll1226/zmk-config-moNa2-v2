@@ -10,23 +10,38 @@ export function useBehaviors(conn: RpcConnection | null) {
     new Map()
   );
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!conn) return;
 
     let cancelled = false;
     setLoading(true);
+    setError(null);
 
     (async () => {
       try {
         const ids = await listAllBehaviors(conn);
+        console.log("[useBehaviors] behavior IDs:", ids);
+
         const map = new Map<number, BehaviorDetails>();
         for (const id of ids) {
           if (cancelled) return;
           const details = await getBehaviorDetails(conn, id);
-          if (details) map.set(id, details);
+          if (details) {
+            map.set(id, details);
+            console.log(`[useBehaviors] behavior ${id}:`, details.displayName);
+          }
         }
-        if (!cancelled) setBehaviors(map);
+        if (!cancelled) {
+          console.log("[useBehaviors] loaded", map.size, "behaviors");
+          setBehaviors(map);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error("[useBehaviors] error:", e);
+          setError(String(e));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -37,5 +52,5 @@ export function useBehaviors(conn: RpcConnection | null) {
     };
   }, [conn]);
 
-  return { behaviors, loading };
+  return { behaviors, loading, error };
 }
