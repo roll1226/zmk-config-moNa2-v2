@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeymapLayer } from "../hooks/useKeymap";
 import type { BehaviorDetails } from "../hooks/useBehaviors";
+import type { Combo } from "../types/combo";
 import {
   generateKeymapFile,
   parseKeymapExtras,
@@ -10,22 +11,35 @@ import {
 interface KeymapExportModalProps {
   layers: KeymapLayer[];
   behaviors: Map<number, BehaviorDetails>;
+  extras: KeymapExtras | null;
+  combos: Combo[];
+  sensorBindings: string[];
+  onExtrasLoaded: (extras: KeymapExtras) => void;
   onClose: () => void;
 }
 
 export function KeymapExportModal({
   layers,
   behaviors,
+  extras,
+  combos,
+  sensorBindings,
+  onExtrasLoaded,
   onClose,
 }: KeymapExportModalProps) {
-  const [extras, setExtras] = useState<KeymapExtras | null>(null);
   const [loadedFileName, setLoadedFileName] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const content = generateKeymapFile(layers, behaviors, extras ?? undefined);
+  const content = generateKeymapFile(
+    layers,
+    behaviors,
+    extras ?? undefined,
+    combos,
+    sensorBindings
+  );
 
   // Close on Escape
   useEffect(() => {
@@ -49,7 +63,7 @@ export function KeymapExportModal({
       if (typeof text !== "string") return;
       try {
         const parsed = parseKeymapExtras(text);
-        setExtras(parsed);
+        onExtrasLoaded(parsed);
         setLoadedFileName(file.name);
         setParseError(null);
       } catch (err) {
@@ -57,14 +71,7 @@ export function KeymapExportModal({
       }
     };
     reader.readAsText(file);
-    // Reset so the same file can be re-loaded
     e.target.value = "";
-  };
-
-  const handleClearOriginal = () => {
-    setExtras(null);
-    setLoadedFileName(null);
-    setParseError(null);
   };
 
   const handleCopy = () => {
@@ -86,10 +93,12 @@ export function KeymapExportModal({
 
   const statsSummary = extras
     ? [
-        extras.combos ? "combos ✓" : "",
+        combos.length > 0 ? `combos ${combos.length}件 ✓` : extras.combos ? "combos ✓" : "",
         extras.macros ? "macros ✓" : "",
         extras.customBehaviors ? "behaviors ✓" : "",
-        extras.sensorBindings.filter(Boolean).length > 0
+        sensorBindings.filter(Boolean).length > 0
+          ? `sensor-bindings ${sensorBindings.filter(Boolean).length} layers ✓`
+          : extras.sensorBindings.filter(Boolean).length > 0
           ? `sensor-bindings ${extras.sensorBindings.filter(Boolean).length} layers ✓`
           : "",
       ]
@@ -128,29 +137,21 @@ export function KeymapExportModal({
         <div className="px-5 py-3 border-b border-gray-700 bg-gray-800/50">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-xs text-gray-400 shrink-0">
-              sensor-bindings / combos を自動取り込み:
+              includes / macros / behaviors を自動取り込み:
             </span>
-            {loadedFileName ? (
+            {extras || loadedFileName ? (
               <>
-                <span className="text-xs text-green-400 font-mono">
-                  {loadedFileName}
-                </span>
+                {loadedFileName && (
+                  <span className="text-xs text-green-400 font-mono">{loadedFileName}</span>
+                )}
                 {statsSummary && (
-                  <span className="text-xs text-green-300 opacity-70">
-                    ({statsSummary})
-                  </span>
+                  <span className="text-xs text-green-300 opacity-70">({statsSummary})</span>
                 )}
                 <button
                   onClick={handleLoadOriginal}
                   className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 border border-gray-500 rounded transition-colors"
                 >
                   再読み込み
-                </button>
-                <button
-                  onClick={handleClearOriginal}
-                  className="px-3 py-1 text-xs bg-red-900/50 hover:bg-red-800/70 border border-red-700 rounded text-red-300 transition-colors"
-                >
-                  クリア
                 </button>
               </>
             ) : (
@@ -162,7 +163,7 @@ export function KeymapExportModal({
                   既存の mona2.keymap を読み込む
                 </button>
                 <span className="text-xs text-gray-500">
-                  読み込むと combos・sensor-bindings・macros が自動でマージされます
+                  読み込むと includes・macros・behaviors が自動でマージされ、コンボ・エンコーダーも初期化されます
                 </span>
               </>
             )}
@@ -175,10 +176,10 @@ export function KeymapExportModal({
         {/* Instructions */}
         <div className="px-5 py-2 bg-yellow-900/20 border-b border-yellow-800/40 text-xs text-yellow-300">
           <span>
-            手順: ① 上で既存ファイルを読み込む → ② ダウンロードまたはコピー →{" "}
-            ③{" "}
+            手順: ① 上で既存ファイルを読み込む → ② コンボ・エンコーダータブで編集 → ③ ダウンロード →{" "}
+            ④{" "}
             <code className="bg-black/30 px-1 rounded">config/mona2.keymap</code>{" "}
-            を置き換え → ④ push してリビルド
+            を置き換え → ⑤ push してリビルド
           </span>
         </div>
 
@@ -197,7 +198,9 @@ export function KeymapExportModal({
           <span className="text-xs text-gray-500">
             {layers.length} レイヤー /{" "}
             {layers.reduce((s, l) => s + l.bindings.length, 0)} バインディング
-            {extras && " / 既存ファイルから取り込み済み"}
+            {combos.length > 0 && ` / ${combos.length} コンボ`}
+            {sensorBindings.filter(Boolean).length > 0 &&
+              ` / エンコーダー ${sensorBindings.filter(Boolean).length} レイヤー`}
           </span>
           <div className="flex gap-3">
             <button

@@ -1,5 +1,7 @@
 import type { KeyBinding, KeymapLayer } from "../hooks/useKeymap";
 import type { BehaviorDetails } from "../hooks/useBehaviors";
+import type { Combo } from "../types/combo";
+import { generateCombosBlock } from "./comboParser";
 
 // HID keyboard page (0x07) code → ZMK key name
 const KBD_KEY_NAMES: Record<number, string> = {
@@ -150,6 +152,10 @@ export interface KeymapExtras {
   customBehaviors: string;
   /** sensor-bindings per layer index; empty string means no sensor-bindings */
   sensorBindings: string[];
+  /** layer node names from the keymap block (for standalone mode) */
+  layerNames: string[];
+  /** full "keymap { ... };" block text for standalone export */
+  rawKeymapBlock: string;
 }
 
 /**
@@ -236,22 +242,23 @@ function extractTopBehaviorConfigs(text: string): string {
 }
 
 /**
- * For each layer inside the `keymap { }` DTS block, extract the
- * `sensor-bindings = <...>;` line (or empty string if absent).
+ * For each layer inside the `keymap { }` DTS block, extract the layer name
+ * and `sensor-bindings = <...>;` line (or empty string if absent).
  * Layers are identified by containing a `bindings = <` property.
  */
-function extractSensorBindingsPerLayer(keymapBlockText: string): string[] {
-  const result: string[] = [];
+function extractLayerData(keymapBlockText: string): {
+  layerNames: string[];
+  sensorBindings: string[];
+} {
+  const layerNames: string[] = [];
+  const sensorBindings: string[] = [];
   let pos = 0;
 
   while (pos < keymapBlockText.length) {
-    // Find the next '{' that starts a layer-like child node
     const bracePos = keymapBlockText.indexOf('{', pos);
     if (bracePos === -1) break;
 
-    // The identifier before '{' (skip if it's a property like "compatible = ...")
     const before = keymapBlockText.slice(pos, bracePos).trimEnd();
-    // Must end with a word character (node name), not with '='
     if (!/\w$/.test(before) || /=\s*$/.test(before)) {
       pos = bracePos + 1;
       continue;
@@ -260,15 +267,79 @@ function extractSensorBindingsPerLayer(keymapBlockText: string): string[] {
     const closePos = matchingBraceEnd(keymapBlockText, bracePos);
     const blockContent = keymapBlockText.slice(bracePos + 1, closePos - 1);
 
-    // Only count it as a layer if it has bindings = <
     if (/\bbindings\s*=\s*</.test(blockContent)) {
+      const nameMatch = before.match(/(\w+)\s*$/);
+      layerNames.push(nameMatch ? nameMatch[1] : `layer_${layerNames.length}`);
       const sbMatch = blockContent.match(/[ \t]*sensor-bindings\s*=\s*<[^>]+>\s*;/);
-      result.push(sbMatch ? sbMatch[0].trim() : "");
+      sensorBindings.push(sbMatch ? sbMatch[0].trim() : "");
     }
 
     pos = closePos;
   }
 
+  return { layerNames, sensorBindings };
+}
+
+/**
+ * Replace or add/remove `sensor-bindings` lines in a raw keymap block string.
+ * `overrides[i]` is the new sensor-bindings line (e.g. "sensor-bindings = <&scroll_up_down>;")
+ * or empty string to remove the line for layer i.
+ */
+function replaceSensorBindingsInKeymapBlock(
+  rawBlock: string,
+  overrides: string[]
+): string {
+  const subs: { start: number; end: number; replacement: string }[] = [];
+  let layerIdx = 0;
+  let pos = 0;
+
+  while (pos < rawBlock.length) {
+    const bracePos = rawBlock.indexOf('{', pos);
+    if (bracePos === -1) break;
+
+    const before = rawBlock.slice(pos, bracePos).trimEnd();
+    if (!/\w$/.test(before) || /=\s*$/.test(before)) {
+      pos = bracePos + 1;
+      continue;
+    }
+
+    const closePos = matchingBraceEnd(rawBlock, bracePos);
+    const blockContent = rawBlock.slice(bracePos + 1, closePos - 1);
+
+    if (/\bbindings\s*=\s*</.test(blockContent)) {
+      const override = overrides[layerIdx] ?? '';
+      const sbRe = /\n[ \t]*sensor-bindings\s*=[^\n]*;/;
+      const sbMatch = sbRe.exec(blockContent);
+
+      if (sbMatch) {
+        const sbAbsStart = bracePos + 1 + sbMatch.index;
+        const sbAbsEnd = sbAbsStart + sbMatch[0].length;
+        if (override) {
+          const indentM = sbMatch[0].match(/^(\n[ \t]*)/);
+          const ind = indentM ? indentM[1] : '\n            ';
+          subs.push({ start: sbAbsStart, end: sbAbsEnd, replacement: `${ind}${override}` });
+        } else {
+          subs.push({ start: sbAbsStart, end: sbAbsEnd, replacement: '' });
+        }
+      } else if (override) {
+        const closeLineStart = rawBlock.lastIndexOf('\n', closePos - 2) + 1;
+        const closingIndent = rawBlock.slice(closeLineStart, closePos - 1).match(/^([ \t]*)/)?.[1] ?? '        ';
+        subs.push({
+          start: closePos - 1,
+          end: closePos - 1,
+          replacement: `\n${closingIndent}    ${override}\n${closingIndent}`,
+        });
+      }
+      layerIdx++;
+    }
+    pos = closePos;
+  }
+
+  subs.sort((a, b) => b.start - a.start);
+  let result = rawBlock;
+  for (const sub of subs) {
+    result = result.slice(0, sub.start) + sub.replacement + result.slice(sub.end);
+  }
   return result;
 }
 
@@ -292,6 +363,9 @@ export function parseKeymapExtras(fileContent: string): KeymapExtras {
   let combos = '', macros = '', customBehaviors = '';
   let sensorBindings: string[] = [];
 
+  let layerNames: string[] = [];
+  let rawKeymapBlock = '';
+
   if (rootMatch?.index !== undefined) {
     const rootBrace = fileContent.indexOf('{', rootMatch.index + rootMatch[0].length - 1);
     const rootEnd = matchingBraceEnd(fileContent, rootBrace);
@@ -301,17 +375,19 @@ export function parseKeymapExtras(fileContent: string): KeymapExtras {
     macros = extractNamedBlock(rootInner, 'macros') ?? '';
     customBehaviors = extractNamedBlock(rootInner, 'behaviors') ?? '';
 
-    // Extract sensor-bindings from keymap layers
     const keymapBlock = extractNamedBlock(rootInner, 'keymap');
     if (keymapBlock) {
+      rawKeymapBlock = keymapBlock;
       const keymapBrace = keymapBlock.indexOf('{');
       const keymapEnd = matchingBraceEnd(keymapBlock, keymapBrace);
       const keymapInner = keymapBlock.slice(keymapBrace + 1, keymapEnd - 1);
-      sensorBindings = extractSensorBindingsPerLayer(keymapInner);
+      const layerData = extractLayerData(keymapInner);
+      sensorBindings = layerData.sensorBindings;
+      layerNames = layerData.layerNames;
     }
   }
 
-  return { includes, defines, topBehaviorConfigs, combos, macros, customBehaviors, sensorBindings };
+  return { includes, defines, topBehaviorConfigs, combos, macros, customBehaviors, sensorBindings, layerNames, rawKeymapBlock };
 }
 
 // ─────────────────────────────────────────────
@@ -334,7 +410,9 @@ export function parseKeymapExtras(fileContent: string): KeymapExtras {
 export function generateKeymapFile(
   layers: KeymapLayer[],
   behaviors: Map<number, BehaviorDetails>,
-  extras?: KeymapExtras
+  extras?: KeymapExtras,
+  overrideCombos?: Combo[],
+  overrideSensorBindings?: string[]
 ): string {
   const now = new Date().toISOString().replace("T", " ").slice(0, 19);
 
@@ -367,14 +445,21 @@ export function generateKeymapFile(
   // ── Custom blocks (combos / macros / behaviors) ────────────────────────
   const rootInnerParts: string[] = [];
 
-  const combosText = extras?.combos ?? '';
+  // Combos: structured overrideCombos takes precedence over raw extras.combos
+  let resolvedCombosText = '';
+  if (overrideCombos !== undefined) {
+    resolvedCombosText = generateCombosBlock(overrideCombos);
+  } else {
+    resolvedCombosText = extras?.combos ?? '';
+  }
+
   const macrosText = extras?.macros ?? '';
   const customBehaviorsText = extras?.customBehaviors ?? '';
 
-  if (combosText) {
-    rootInnerParts.push(indent(combosText, 4));
-  } else if (!extras) {
-    // No original file loaded — emit example placeholder
+  if (resolvedCombosText) {
+    rootInnerParts.push(indent(resolvedCombosText, 4));
+  } else if (!extras && !overrideCombos) {
+    // No original file loaded and no structured combos — emit placeholder
     rootInnerParts.push(
       `    /*\n` +
       `     * combos { compatible = "zmk,combos"; ... };\n` +
@@ -386,48 +471,57 @@ export function generateKeymapFile(
   if (macrosText) rootInnerParts.push(indent(macrosText, 4));
   if (customBehaviorsText) rootInnerParts.push(indent(customBehaviorsText, 4));
 
+  // sensor-bindings source: structured override takes precedence over extras
+  const resolvedSensorBindings = overrideSensorBindings ?? extras?.sensorBindings ?? [];
+
   // ── Layer nodes ────────────────────────────────────────────────────────
-  const layerNodes = layers.map((layer, idx) => {
-    const nodeName = sanitizeLayerName(layer.name ?? "", idx);
-    const bs = layer.bindings.map((b: KeyBinding) => bindingToZmkStr(b, behaviors));
+  if (layers.length === 0 && extras?.rawKeymapBlock) {
+    // Standalone mode: preserve original keymap block, update sensor-bindings
+    const updatedBlock = overrideSensorBindings
+      ? replaceSensorBindingsInKeymapBlock(extras.rawKeymapBlock, overrideSensorBindings)
+      : extras.rawKeymapBlock;
+    rootInnerParts.push(`    ${updatedBlock}`);
+  } else {
+    const layerNodes = layers.map((layer, idx) => {
+      const nodeName = sanitizeLayerName(layer.name ?? "", idx);
+      const bs = layer.bindings.map((b: KeyBinding) => bindingToZmkStr(b, behaviors));
 
-    const r1 = formatRow([...bs.slice(0, 5), "    ", ...bs.slice(5, 10)]);
-    const r2 = formatRow([...bs.slice(10, 15), "  ", bs[15] ?? "&none", "  ", ...bs.slice(16, 21)]);
-    const r3 = formatRow([...bs.slice(21, 26), "  ", bs[26] ?? "&none", "  ", bs[27] ?? "&none", "  ", ...bs.slice(28, 33)]);
-    const r4 = formatRow([...bs.slice(33, 39), "    ", ...bs.slice(39, 42)]);
+      const r1 = formatRow([...bs.slice(0, 5), "    ", ...bs.slice(5, 10)]);
+      const r2 = formatRow([...bs.slice(10, 15), "  ", bs[15] ?? "&none", "  ", ...bs.slice(16, 21)]);
+      const r3 = formatRow([...bs.slice(21, 26), "  ", bs[26] ?? "&none", "  ", bs[27] ?? "&none", "  ", ...bs.slice(28, 33)]);
+      const r4 = formatRow([...bs.slice(33, 39), "    ", ...bs.slice(39, 42)]);
 
-    // sensor-bindings: from extras (by layer index) or placeholder
-    let sensorLine: string;
-    if (extras) {
-      const sb = extras.sensorBindings[idx] ?? '';
-      sensorLine = sb
-        ? `\n            ${sb}`
-        : '';
-    } else {
-      sensorLine = `\n            /* sensor-bindings = <&scroll_up_down>; */`;
-    }
+      let sensorLine: string;
+      if (overrideSensorBindings !== undefined || extras) {
+        const sb = resolvedSensorBindings[idx] ?? '';
+        sensorLine = sb ? `\n            ${sb}` : '';
+      } else {
+        sensorLine = `\n            /* sensor-bindings = <&scroll_up_down>; */`;
+      }
 
-    return [
-      `        ${nodeName} {`,
-      `            bindings = <`,
-      r1,
-      r2,
-      r3,
-      r4,
-      `            >;`,
-      sensorLine ? sensorLine : '',
-      `        };`,
-    ].filter(l => l !== '').join('\n');
-  });
+      return [
+        `        ${nodeName} {`,
+        `            bindings = <`,
+        r1,
+        r2,
+        r3,
+        r4,
+        `            >;`,
+        sensorLine ? sensorLine : '',
+        `        };`,
+      ].filter(l => l !== '').join('\n');
+    });
 
-  rootInnerParts.push(
-    `    keymap {\n        compatible = "zmk,keymap";\n\n` +
-    layerNodes.join('\n\n') +
-    `\n    };`
-  );
+    rootInnerParts.push(
+      `    keymap {\n        compatible = "zmk,keymap";\n\n` +
+      layerNodes.join('\n\n') +
+      `\n    };`
+    );
+  }
 
   // ── Assemble ──────────────────────────────────────────────────────────
-  const header = extras
+  const hasOverrides = overrideCombos !== undefined || overrideSensorBindings !== undefined;
+  const header = (extras || hasOverrides)
     ? `// Auto-generated by moNa2 Keymap Editor — ${now}\n// (sensor-bindings / combos / macros preserved from original file)`
     : `// Auto-generated by moNa2 Keymap Editor — ${now}\n//\n// Tip: click "既存ファイルから読み込む" to auto-include sensor-bindings & combos.`;
 
